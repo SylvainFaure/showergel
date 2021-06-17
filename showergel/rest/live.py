@@ -4,6 +4,7 @@ RESTful interface to current playout
 """
 from datetime import datetime
 
+import pkg_resources
 from showergel.showergel_bottle import ShowergelBottle
 
 from showergel.liquidsoap_connector import Connection
@@ -20,22 +21,40 @@ def get_live():
     :>json on_air: current track start time
     :>json status: status of the current source ("playing" or "connected to ...")
     :>json server_time: server's datetime
+    :>json remaining: *maybe* remaining duration of current source, in seconds
     """
-    metadata = Connection.get().current()
+    connection = Connection.get()
+    metadata = connection.current()
     metadata["server_time"] = datetime.now().isoformat()
+    remaining = connection.remaining()
+    if remaining is not None:
+        metadata["remaining"] = remaining
     return metadata
 
-@live_app.get("/params")
-def get_params():
+@live_app.get("/parameters")
+def get_parameters():
     """
     This returns values from the ``[interface]`` section of the configuration file.
 
     :>json name: instance name (appears as interface's title)
+    :>json version: showergel's version
     """
+    version = None
     try:
-        interface_section = live_app.config["interface"]
-    except KeyError:
-        interface_section = {}
+        version = pkg_resources.get_distribution("showergel").version
+    except Exception as excn:
+        log.warning(excn)
+    if not version:
+        version = "demo"
     return {
-        "name": interface_section.get("name", "Showergel")
+        "name": live_app.config.get("interface.name", "Showergel"),
+        "version": version,
     }
+
+@live_app.delete("/live")
+def delete_live():
+    """
+    Skips current track: this sends a skip command to the first Liquidsoap output.
+    """
+    Connection.get().skip()
+    return {}

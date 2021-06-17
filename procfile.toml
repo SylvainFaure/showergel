@@ -1,0 +1,52 @@
+#### Do not use this file ###
+#### unless you want to spawn Showergel in demo mode with Procfile
+
+
+[db.sqlalchemy]
+url = "sqlite:///:memory:"
+
+[interface]
+name = "Showergel demo"
+
+############### Metadata logger ###############
+[metadata_log]
+
+# list of metadata fields that should be stored when available, in addition to
+# artist/title/album. You can use * to represent any characters or nothing.
+# For example, "track*" will include "track" but also "track_number" or "tracktotal"
+extra_fields = [
+    "genre",
+    "year",
+]
+
+
+############## Server configuration ##########
+[listen]
+# Showergel's interface will be available at http://[address]:[port]/
+# As there is no security check, be careful to keep the address on a private network.
+address = "0.0.0.0"
+port = "PORT"
+debug = true
+demo = true
+
+
+########### Fake Liquidsoap connection #######
+[liquidsoap]
+method = "demo"
+
+
+############# Logging configuration ##########
+[logging]
+version = 1
+disable_existing_loggers = false
+
+[logging.formatters.generic]
+format = "%(asctime)s %(levelname)-5.5s [%(process)d][%(threadName)s][%(name)s:%(lineno)s] %(message)s"
+
+[logging.handlers.main]
+formatter = "generic"
+class = "logging.StreamHandler"
+
+[logging.root]
+level = "DEBUG"
+handlers = ["main"]

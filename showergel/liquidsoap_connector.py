@@ -5,7 +5,7 @@ from datetime import timedelta, datetime
 from threading import RLock
 from telnetlib import Telnet
 
-from showergel.metadata import to_datetime, FieldFilter
+from showergel.metadata import to_datetime
 
 log = logging.getLogger(__name__)
 
@@ -26,10 +26,10 @@ class TelnetConnector:
     
     Then Showergel configuration should contain:
 
-    .. code-block:: ini
+    .. code-block:: toml
         [liquidsoap]
-        method = telnet
-        host = 192.168.1.10
+        method = "telnet"
+        host = "192.168.1.10"
         port = 4444
     
     You can also set ``timeout``, in seconds (defaults to 10).
@@ -40,18 +40,18 @@ class TelnetConnector:
 
     def __init__(self, config:dict):
         self._lock = RLock()
-        self.host = config['liquidsoap']['host']
-        self.port = config['liquidsoap']['port']
-        if 'timeout' in config['liquidsoap']:
-            self.timeout = int(config['liquidsoap']['timeout'])
+        self.host = config['liquidsoap.host']
+        self.port = config['liquidsoap.port']
+        if 'liquidsoap.timeout' in config:
+            self.timeout = int(config['liquidsoap.timeout'])
         else:
             self.timeout = 10
-        FieldFilter.setup(config)
 
         self._connection = Telnet()
         self._connect()
 
         self.soap_objects = {}
+        self._first_output_name = None
         self._soaps_updated_at = None
         self.uptime()
         self._latest_active_source = None
@@ -63,12 +63,15 @@ class TelnetConnector:
             self._connection = Telnet()
         log.info("Attempting to contact Liquidsoap over telnet @%s:%s",
             self.host, self.port)
-        self._connection.open(
-            host=self.host,
-            port=self.port,
-            timeout=self.timeout
-        )
-        log.info("Connected.")
+        try:
+            self._connection.open(
+                host=self.host,
+                port=self.port,
+                timeout=self.timeout
+            )
+            log.info("Connected.")
+        except ConnectionRefusedError:
+            log.warning("Cannot connect to Liquidsoap. Please check it is running, or check Showergel's configuration.")
         self._lock.release()
 
     def _command(self, command:str) -> str:
@@ -79,6 +82,8 @@ class TelnetConnector:
             # log.debug("Telnet command: %s", command)
             remaining_attempts -= 1
             try:
+                if not self._connection.sock:
+                    raise BrokenPipeError()
                 self._connection.write(command.encode('utf8') + b'\n')
                 line = self._connection.read_until(b'END').decode('utf8')
                 response = line.rstrip("END").strip("\r\n")
@@ -86,13 +91,26 @@ class TelnetConnector:
                     raise EOFError()
                 # log.debug("Telnet response: %r", response)
                 break
-            except EOFError:
+            except (EOFError, BrokenPipeError, ConnectionResetError):
                 if remaining_attempts:
                     self._connect(reconnect=True)
                 else:
                     log.critical("Failed to open connection to %s:%s", self.host, self.port)
         self._lock.release()
         return response
+
+    def _update_soaps(self):
+        self.soap_objects = {}
+        raw = self._command("list")
+        if raw:
+            for line in raw.split("\r\n"):
+                splitted = line.split(" : ")
+                self.soap_objects[splitted[0]] = splitted[1]
+        self._first_output_name = None
+        for soap_name, soap_type in self.soap_objects.items():
+            if soap_type.startswith('output.'):
+                self._first_output_name = soap_name
+                break
 
     def uptime(self) -> Type[timedelta]:
         """
@@ -102,20 +120,24 @@ class TelnetConnector:
         :return timedelta: the connected Liquidsoap instance's uptime
         """
         self._lock.acquire()
-        parsed = self.UPTIME_PATTERN.match(self._command("uptime"))
-        uptime = timedelta(
-            days    = int(parsed.group(1)),
-            hours   = int(parsed.group(2)),
-            minutes = int(parsed.group(3)),
-            seconds = int(parsed.group(4)),
-        )
-        if not self._soaps_updated_at or uptime < self._soaps_updated_at:
-            self.soap_objects = {}
-            raw = self._command("list")
-            for line in raw.split("\r\n"):
-                splitted = line.split(" : ")
-                self.soap_objects[splitted[0]] = splitted[1]
-            self._soaps_updated_at = uptime
+        raw_uptime = self._command("uptime")
+        if raw_uptime:
+            parsed = self.UPTIME_PATTERN.match(raw_uptime)
+        else:
+            parsed = None
+        if parsed:
+            uptime = timedelta(
+                days    = int(parsed.group(1)),
+                hours   = int(parsed.group(2)),
+                minutes = int(parsed.group(3)),
+                seconds = int(parsed.group(4)),
+            )
+            if not self._soaps_updated_at or uptime < self._soaps_updated_at:
+                self._update_soaps()
+                self._soaps_updated_at = uptime
+        else:
+            uptime = timedelta()
+            log.error("Cannot parse uptime: %r", raw_uptime)
 
         self._lock.release()
         return uptime
@@ -128,12 +150,13 @@ class TelnetConnector:
         current_rid = self._command("request.on_air")
         if current_rid:
             raw = self._command("request.metadata " + current_rid)
-            metadata = self._metadata_to_dict(raw)
+            if raw:
+                metadata = self._metadata_to_dict(raw)
+            else:
+                metadata = {}
         else:
             metadata = self._find_active_source()
             metadata.update(self._read_output_metadata())
-
-        metadata = dict(FieldFilter.filter(metadata, filter_extra=False))
 
         if 'on_air' in metadata:
             metadata['on_air'] = to_datetime(metadata['on_air']).isoformat()
@@ -195,10 +218,13 @@ class TelnetConnector:
         source_type = self.soap_objects[source]
         if source_type in self.STATUS_CHECK:
             status = self._command(source + ".status")
-            if self.STATUS_CHECK[source_type](status):
-                return status
-            else:
-                return None
+            try:
+                if self.STATUS_CHECK[source_type](status):
+                    return status
+                else:
+                    return None
+            except Exception as exc:
+                log.debug(exc)
         else:
             log.debug("Don't know how to check %s", source_type)
         return None
@@ -208,15 +234,29 @@ class TelnetConnector:
         Some inputs don't have a ``.metadata`` command. When they're playing,
         the only way to fetch current metadata is to ask an output.
         """
-        for soap_name, soap_type in self.soap_objects.items():
-            if soap_type.startswith('output.'):
-                all_metadata = self._command(soap_name + '.metadata')
-                separator = "--- 1 ---\n"
+        if self._first_output_name:
+            all_metadata = self._command(self._first_output_name + '.metadata')
+            separator = "--- 1 ---\n"
+            if all_metadata:
                 index = all_metadata.find(separator)
                 if index >= 0:
                     index += len(separator)
                     return self._metadata_to_dict(all_metadata[index:])
         return {}
+
+    def skip(self):
+        if self._first_output_name:
+            self._command(self._first_output_name + '.skip')
+
+    def remaining(self) -> Optional[float]:
+        if self._first_output_name:
+            raw = self._command(self._first_output_name + '.remaining')
+            if raw:
+                try:
+                    return float(raw)
+                except ValueError:
+                    pass
+        return None
 
 
 class EmptyConnector(TelnetConnector):
@@ -225,6 +265,12 @@ class EmptyConnector(TelnetConnector):
 
     def uptime(self):
         return datetime.now() - self.started_at
+
+    def skip(self):
+        pass
+
+    def remaining(self):
+        return None
 
     def current(self):
         return {
@@ -247,8 +293,8 @@ class Connection:
 
     @classmethod
     def setup(cls, config:dict=None):
-        if config and 'liquidsoap' in config:
-            method = config['liquidsoap'].get('method')
+        if config:
+            method = config.get('liquidsoap.method')
             if method == 'none':
                 cls._instance = EmptyConnector()
             elif method == 'demo':
@@ -275,13 +321,9 @@ class Connection:
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
     conn = TelnetConnector({
-        "liquidsoap": {
-            "host": "192.168.1.33",
-            "port": "1234",
-        },
-        'metadata_log': {
-            'ignore_fields': "lyrics,musicbrainz*,r128*",
-        }
+        "liquidsoap.host": "192.168.1.33",
+        "liquidsoap.port": "1234",
+        'metadata_log.extra_fields': [],
     })
     import time
     while True:

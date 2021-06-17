@@ -14,3 +14,15 @@ class TestLive(ShowergelTestCase):
         self.assertIn('source', resp)
         self.assertIn('on_air', resp)
         self.assertIn('status', resp)
+
+    def test_get_parameters(self):
+        resp = self.app.get('/parameters').json
+        self.assertEqual(resp['name'], "ShowergelTest")
+        self.assertIn('version', resp)
+
+    def test_skip(self):
+        resp = self.app.get('/live').json
+        previous_source = resp['source']
+        self.app.delete('/live')
+        resp = self.app.get('/live').json
+        self.assertNotEqual(resp['source'], previous_source)

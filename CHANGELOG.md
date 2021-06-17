@@ -1,6 +1,17 @@
 Changes and release history
 ===========================
 
+0.2.x
+=====
+
+This is Showergel's second experimental release.
+
+ - switch to TOML format for configuration file.
+ - metadata configuration now expects a list of fields you'd like to store (it was an exclusion list in 0.1).
+ - added a front-end.
+ - added `interface.name` parameter
+ - added a Liquidsoap connection . Must be configured in the `liquidsoap` section.
+
 0.1.x
 =====
 

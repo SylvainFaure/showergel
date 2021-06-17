@@ -1,8 +1,8 @@
 <template>
   <div id="app" class="md:flex !font-roboto">
-    <Sidebar :title="apptitle"></Sidebar>
+    <Sidebar :title="parameters.name"></Sidebar>
     <div class="p-12 w-100 h-screen">
-      <router-view />
+      <router-view :parameters="parameters" />
     </div>
   </div>
 </template>
@@ -10,6 +10,14 @@
 <script>
 import http from "@/http";
 import Sidebar from "@/components/Sidebar.vue";
+import { reactive } from "vue";
+
+const parameters_wrapper = reactive({
+  parameters: {
+    name: "Showergel",
+    version: "",
+  },
+});
 
 export default {
   name: "Showergel",
@@ -17,19 +25,17 @@ export default {
     Sidebar,
   },
   data() {
-    return {
-      apptitle: "Showergel",
-    };
+    return parameters_wrapper;
   },
   methods: {
-    onParamsResponse(response) {
-      this.apptitle = response.data.name;
+    onParametersResponse(response) {
+      this.parameters = response.data;
     },
   },
   mounted() {
     http
-      .get("/params")
-      .then(this.onParamsResponse)
+      .get("/parameters")
+      .then(this.onParametersResponse)
       .catch((error) => {
         console.log(error);
       });

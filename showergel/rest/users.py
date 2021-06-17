@@ -18,29 +18,7 @@ def post_login(db):
     """
     Should be called by Liquidsoap to authenticate harbor users.
     It returns the matched user information as a JSONobject, or a 404 error.
-    Call it from Liquidsoap as follows:
-    
-    .. code-block:: ocaml
-
-        def auth_function(user, password) =
-            let (status, _, _) = http.post(
-                headers=[("Content-Type", "application/json")],
-                "http://localhost:2345/login",
-                data=json_of([
-                    ("username", user), ("password", password)
-                ])
-            ))
-            let (_, code, _) = status
-            if code == 200 then
-                log("Access granted to #{user}")
-                true
-            else
-                log("Access denied to #{user}")
-                false
-            end
-        end
-
-        harbor = input.harbor(auth=auth_function, ...
+    See :ref:`liq_login`.
     """
     try:
         username = request.json.get('username')
@@ -84,6 +62,25 @@ def put_users(db):
                 return user.to_dict()
     raise HTTPError(status=400, body="Non-empty 'username' and 'password' are expected.")
 
+@users_app.post("/users/<username>")
+def update_user(db, username):
+    """
+    Update user attributes
+
+    :<json password: optional
+    :>json username:
+    :>json created_at:
+    :>json modified_at:
+    """
+    user = User.from_username(db, username)
+    if user:
+        new_password = request.json.get('password')
+        if new_password:
+            user.update_password(new_password)
+        db.commit()
+        return user.to_dict()
+    else:
+        raise HTTPError(status=404, body=HTTP_CODES[404])
 
 @users_app.delete("/users/<username>")
 def delete_users(db, username):

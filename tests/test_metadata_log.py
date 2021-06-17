@@ -1,17 +1,19 @@
 from datetime import datetime, timedelta
 from showergel.metadata import LIQUIDSOAP_DATEFORMAT, LogExtra, FieldFilter
 from showergel.demo import artistic_generator
-from . import ShowergelTestCase, DBSession
+from . import ShowergelTestCase, DBSession, app
 
 FIELD_FILTER_CONFIG = {
-    'metadata_log': {
-        'ignore_fields': "lyrics, mb*",
-    }
+    'metadata_log.extra_fields': ["lyrics", "mb*"],
 }
 
 class TestMetadataLog(ShowergelTestCase):
 
     def test_field_filter(self):
+        """
+        this should be the first test running in this case
+        """
+
         # FieldFilter misses its configuration:
         with self.assertRaises(ValueError):
             FieldFilter.filter({
@@ -19,20 +21,27 @@ class TestMetadataLog(ShowergelTestCase):
                 "lyrics": "lorem ipsum",
             })
 
-        # when disabling `filter_extra`, title should be included
+        # when disabling `only_extra`, title should be included
         filtered = dict(FieldFilter.filter({
             "title": "Greatest song in the world",
             "lyrics": "lorem ipsum",
-        }, config=FIELD_FILTER_CONFIG, filter_extra=False))
+            "mb_trackid": "cb4c28fe-0cfb-4f9f-8546-209088441c92",
+            "genre": "Test",
+        }, config=FIELD_FILTER_CONFIG, only_extra=False))
         self.assertIn('title', filtered)
-        self.assertNotIn('lyrics', filtered)
+        self.assertIn('lyrics', filtered)
+        self.assertIn('mb_trackid', filtered)
+        self.assertNotIn('genre', filtered)
 
         # don't crash if configuration misses FieldFilter's params
         FieldFilter.setup({})
         _ = FieldFilter.filter({
             "title": "Greatest song in the world",
             "lyrics": "lorem ipsum",
-        }, filter_extra=False)
+        }, only_extra=False)
+
+        # leave the normal conf for other tests
+        FieldFilter.setup(app.config)
 
     def test_metadata_log(self):
         # at least on_air is required
@@ -111,18 +120,22 @@ class TestMetadataLog(ShowergelTestCase):
         self.assertEqual(2, len(logged))
 
         logged = self.app.get('/metadata_log', {
-            "start": datetime(2021, 1, 1),
-            "end": datetime(2021, 1, 2),
+            "start": datetime(2021, 1, 1).isoformat(),
+            "end": datetime(2021, 1, 2).isoformat(),
         }).json['metadata_log']
         self.assertEqual(0, len(logged))
 
+        # check that limit is ignored when start and end is provided
+        # check start and end can be parsed as YYYY-MM-DD
         logged = self.app.get('/metadata_log', {
-            "start": datetime(2021, 1, 1),
-            "end": now + tracktime,
+            "limit": 1,
+            "start": datetime(2021, 1, 1).strftime(r"%Y-%m-%d"),
+            "end": (now + tracktime).isoformat(),
         }).json['metadata_log']
         self.assertEqual(3, len(logged))
 
         # put some data to LogExtra... and get it back
+        # this is tied to the configuration in tests/__init__.py
         now += tracktime
         last = {
             'on_air': now.isoformat(),
@@ -137,5 +150,5 @@ class TestMetadataLog(ShowergelTestCase):
         logged = self.app.get('/metadata_log', {
             "limit": 1,
         }).json['metadata_log'][0]
-        self.assertEqual(logged['editor'], 'Pytest')
+        self.assertNotIn('editor', logged)
         self.assertEqual(logged['tracknumber'], '1')

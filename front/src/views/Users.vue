@@ -3,7 +3,13 @@
     <h1 class="title">Users</h1>
     <p>
       From here you can edit usernames and passwords that will be allowed to
-      stream, if <code>harbor</code> authentication is set up.
+      stream, if <code>harbor</code> authentication
+      <a
+        href="https://showergel.readthedocs.io/en/latest/liquidsoap.html#authenticating-users-on-harbor"
+        target="_blank"
+      >
+        is set up </a
+      >.
     </p>
     <Button type="primary" rounded @click="showUserAdd = true"> Add </Button>
 
@@ -121,6 +127,24 @@ export default {
           .then(this.resetAdd)
           .then(this.getUsers)
           .catch(notifications.error_handler);
+      }
+    },
+    changePassword(username) {
+      let pass = prompt(`Please enter a new pass phrase for ${username}`);
+      if (pass) {
+        let confirm = prompt(`Please confirm ${username}'s new pass phrase`);
+        if (confirm) {
+          if (confirm == pass) {
+            http
+              .post(`/users/${username}`, {
+                password: pass,
+              })
+              .then(notifications.success_handler("Pass phrase updated"))
+              .catch(notifications.error_handler);
+          } else {
+            notifications.error("Pass phrases don't match !");
+          }
+        }
       }
     },
     deleteUser(username) {

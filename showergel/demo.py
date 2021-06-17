@@ -27,7 +27,8 @@ def stub_log_data(session, config):
     sources = ['test', 'live', 'unknwon_sound_source1231']
     albums = ['Showergel Rocks', 'Better hygiene with Liquidsoap']
 
-    for i in range(50):
+    # generate a few days of log:
+    for i in range(3000):
         now -= tracktime
         title = artistic_generator()
         artist = artistic_generator()
@@ -80,6 +81,12 @@ class FakeLiquidsoapConnector:
         self._uptime += self.FAKE_TIME_SHIFT
         return self._uptime
 
+    def skip(self):
+        pass
+
+    def remaining(self):
+        return self.FAKE_TIME_SHIFT.total_seconds()
+
     def current(self) -> dict:
         metadata = self.generate_metadata()
         metadata["uptime"] = str(self.uptime())
@@ -131,11 +138,14 @@ class DemoLiquidsoapConnector(FakeLiquidsoapConnector):
         self._started_at = datetime.now().replace(microsecond=0)
         self._metadata = self.generate_metadata()
 
+    def skip(self):
+        self._on_air = datetime.now().replace(microsecond=0)
+        self._metadata = self.generate_metadata()
+
     def uptime(self) -> Type[timedelta]:
         uptime = datetime.now().replace(microsecond=0) - self._started_at
         if (datetime.now() - self._on_air) >= self.TRACK_LENGTH:
-            self._on_air = datetime.now().replace(microsecond=0)
-            self._metadata = self.generate_metadata()
+            self.skip()
         return uptime
 
     def current(self) -> dict:
@@ -145,6 +155,9 @@ class DemoLiquidsoapConnector(FakeLiquidsoapConnector):
         metadata["uptime"] = uptime
         metadata["on_air"] = self._on_air.isoformat()
         return metadata
+
+    def remaining(self):
+        return max(0.0, (self.TRACK_LENGTH - (datetime.now() - self._on_air)).total_seconds())
 
 # test tool
 if __name__ == '__main__':

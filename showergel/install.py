@@ -9,33 +9,33 @@ import os
 import os.path
 import shutil
 import socket
-from configparser import ConfigParser
 
 import click
+import toml
 from sqlalchemy import engine_from_config
 
 
 
 _log = logging.getLogger(__name__)
 
-INI_TEMPLATE = """
-[db]
-sqlalchemy.url = sqlite:///{db}
+TOML_TEMPLATE = """
+[db.sqlalchemy]
+url = "sqlite:///{db}"
 
 [interface]
 # name displayed in the interface's left bar
-name = Showergel
+name = "{basename}"
 
 ############### Metadata logger ###############
 [metadata_log]
 
-# list of metadata fields that should *not* be stored
-# you can use * to represent any characters or nothing
-# for example, "musicbraiz*" will ignore "musicbrainz"
-# but also "musicbrainz_artist_id" or "musicbrainz album type"
-ignore_fields = musicbrainz*, comment*, itunes*, lyrics
-
-
+# list of metadata fields that should be stored when available, in addition to
+# artist/title/album. You can use * to represent any characters or nothing.
+# For example, "track*" will include "track" but also "track_number" or "tracktotal"
+extra_fields = [
+    "genre",
+    "year",
+]
 
 ############## Server configuration ##########
 [listen]
@@ -43,7 +43,7 @@ ignore_fields = musicbrainz*, comment*, itunes*, lyrics
 # As there is no security check, be careful to keep the address on a private network.
 # If port is not a number, we assume it is the name of an environment variable
 # that contains the required port number (like, Heroku's $PORT).
-address = localhost
+address = "localhost"
 port = {port:d}
 {debug}
 
@@ -60,32 +60,25 @@ port = {port:d}
 #
 # then change "method" from "none" to "telnet".
 
-method = none
-host = 127.0.0.1
+method = "none"
+host = "127.0.0.1"
 port = 1234
 
 ############# Logging configuration ##########
+[logging]
+version = 1
+disable_existing_loggers = false
 
-[loggers]
-keys = root
+[logging.formatters.generic]
+format = "%(asctime)s %(levelname)-5.5s [%(process)d][%(threadName)s][%(name)s:%(lineno)s] %(message)s"
 
-[handlers]
-keys = main
-
-[formatters]
-keys = generic
-
-[logger_root]
-level = {log_level}
-handlers = main
-
-[handler_main]
-formatter = generic
-level = NOTSET
+[logging.handlers.main]
+formatter = "generic"
 {handler}
 
-[formatter_generic]
-format = %(asctime)s %(levelname)-5.5s [%(threadName)s][%(name)s:%(lineno)s] %(message)s
+[logging.root]
+level = "{log_level}"
+handlers = ["main"]
 
 """
 
@@ -125,7 +118,7 @@ After=network.target
 Type=simple
 Restart=always
 WorkingDirectory={base_dir}
-ExecStart={showergel} {ini_path}
+ExecStart={showergel} {toml_path}
 
 [Install]
 WantedBy=default.target
@@ -146,8 +139,8 @@ class Installer(object):
         self.path_systemd_units = home + "/.config/systemd/user/"
 
     @property
-    def path_ini(self):
-        return os.getcwd() + '/' + self.basename + '.ini'
+    def path_toml(self):
+        return os.getcwd() + '/' + self.basename + '.toml'
 
     @property
     def path_db(self):
@@ -162,7 +155,7 @@ class Installer(object):
 
     def _potential_paths(self):
         for path in [
-            self.path_ini,
+            self.path_toml,
             self.path_db,
             self.path_log,
             os.getcwd() + '/' + self.basename + '_gel.log',
@@ -217,45 +210,49 @@ class Installer(object):
             if os.path.exists(path):
                 raise click.ClickException(f"{path} already exists, which suggests that Showergel is already installed. Or maybe install with another basename.")
 
-    def create_ini_and_db(self, dev=False):
+    def create_toml_and_db(self, dev=False):
         if dev:
-            handler = "class = logging.StreamHandler\nargs = (sys.stderr,)"
-            debug = "debug = True"
+            handler = 'class = "logging.StreamHandler"'
+            debug = "debug = true"
             log_level = "DEBUG"
         else:
-            handler = "class = logging.handlers.RotatingFileHandler\nargs=('{}', 'a', 1000000, 10)".format(
-                self.path_log)
+            handler = """class = "logging.handlers.RotatingFileHandler"
+filename = "{}"
+maxBytes = 10000000
+backupCount = 10
+""".format(self.path_log)
             debug = ""
             log_level = "INFO"
-        with open(self.path_ini, 'w') as ini:
-            click.echo("Writing configuration file: "+self.path_ini)
-            ini.write(INI_TEMPLATE.format(
+        with open(self.path_toml, 'w') as toml_file:
+            click.echo("Writing configuration file: "+self.path_toml)
+            toml_file.write(TOML_TEMPLATE.format(
                 db=self.path_db,
                 port=self.port,
                 handler=handler,
                 debug=debug,
                 log_level=log_level,
+                basename=self.basename,
             ))
         click.echo("Initializing database: "+self.path_db)
         self.create_db_schema()
 
-    def create_db_schema(self, path_ini=None):
-        if not path_ini:
-            path_ini = self.path_ini
+    def create_db_schema(self, path_toml=None):
+        if not path_toml:
+            path_toml = self.path_toml
 
         from showergel.db import Base
         # indirectly import all Base subclasses:
         from showergel import rest
 
-        config = ConfigParser()
-        config.read(path_ini)
-        engine = engine_from_config(config['db'])
+        with open(path_toml, 'r') as f:
+            config = toml.load(f)
+        engine = engine_from_config(config['db']['sqlalchemy'], prefix='')
         Base.metadata.create_all(engine)
 
     def ask_liquid_script(self):
         click.echo("\nIf you would like to also create a systemd service for your Liquidsoap script, enter its path below. Otherwise, leave blank.")
         while True:
-            liq = click.prompt("Path to Liquidsoap script (absolute or relative)")
+            liq = click.prompt("Path to Liquidsoap script (absolute or relative)", default="")
             if liq:
                 if not liq.startswith('/'):
                     liq = os.getcwd() + '/' + liq
@@ -314,7 +311,7 @@ class Installer(object):
             service.write(SHOWERGEL_UNIT_TEMPLATE.format(
                 basename=self.basename,
                 base_dir=os.getcwd(),
-                ini_path=self.path_ini,
+                toml_path=self.path_toml,
                 showergel=shutil.which('showergel'),
             ))
 
@@ -361,16 +358,16 @@ class Installer(object):
             click.echo("\nOnce started, you can access Showergel's interface at http://localhost:{}/".format(self.port))
         else:
             click.echo("You can start showergel by invoking:")
-            click.echo("showergel "+self.path_ini)
+            click.echo("showergel "+self.path_toml)
 
         click.echo("\nBe careful to restart Showergel after editing the .ini file")
 
         click.secho("\nWe advise you backup regularly the following files by copying them to an external support:",
             bold=True)
         click.echo(" * "+self.path_db)
-        click.echo(" * "+self.path_ini)
+        click.echo(" * "+self.path_toml)
         click.echo("")
-        click.secho("\nWe advise you to read and tune Showergel's configuration: "+self.path_ini,
+        click.secho("\nWe advise you to read and tune Showergel's configuration: "+self.path_toml,
             bold=True)
         click.echo("")
 
@@ -382,11 +379,11 @@ class Installer(object):
 def main(update, dev, no_revert_on_failure):
     installer = Installer()
     if (update):
-        installer.create_db_schema(path_ini=update)
+        installer.create_db_schema(path_toml=update)
         click.secho("DB is up-to-date", fg='green', bold=True)
     elif (dev):
         installer.check_no_overwriting()
-        installer.create_ini_and_db(dev=True)
+        installer.create_toml_and_db(dev=True)
         installer.recap()
     else:
         try:
@@ -401,7 +398,7 @@ def main(update, dev, no_revert_on_failure):
                 installer.create_systemd_unit()
 
             # do this now because adding Liquidsoap script as a service changes the log path
-            installer.create_ini_and_db()
+            installer.create_toml_and_db()
             if installer.service_name and click.confirm("\nStart the service(s) at boot ?"
                 , default=True):
                 installer.enable_systemd_unit()
