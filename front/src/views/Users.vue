@@ -1,147 +1,149 @@
 <template>
   <div id="playout_history" class="content">
-    <h1>Users</h1>
+    <h1 class="title">Users</h1>
     <p>
-      From here you can edit usernames and passwords that will be allowed
-      to stream, if <code>harbor</code> authentication is set up.
+      From here you can edit usernames and passwords that will be allowed to
+      stream, if <code>harbor</code> authentication is set up.
     </p>
-    <button class="button block is-primary is-rounded" @click="showUserAdd = true">Add</button>
-    <div class="modal" :class="{ 'is-active': showUserAdd }">
-      <div class="modal-background"></div>
-      <div class="modal-card">
-        <header class="modal-card-head">
-          <p class="modal-card-title">Create user account</p>
-          <button class="delete" aria-label="close" @click="resetAdd()"></button>
-        </header>
-        <section class="modal-card-body">
-          <form @submit.prevent="addUser()" class="box" id="addUser">
-          <p>
-            Avoid special characters (even spaces) in usernames.
-          </p>
-          <div class="field">
-              <label class="label" for="username">Username</label>
-              <div class="control">
-                <input class="input" id="username" v-model="addUsername" />
-              </div>
-          </div>
-          <div class="field">
-              <label class="label" for="password">Pass phrase</label>
-              <div class="control">
-                <input class="input" type="password" id="password" v-model="addPassword"/>
-              </div>
-          </div>
-          <div class="field">
-              <label class="label" for="password_confirmation">Confirm pass phrase</label>
-              <div class="control">
-                <input class="input" type="password" id="password_confirmation" v-model="addPasswordConfirmation" />
-              </div>
-              <p class="help is-danger" v-show="addPasswordsMismatch">
-                Pass phrases don't match
-              </p>
-          </div>
-          </form>
-        </section>
-        <footer class="modal-card-foot">
-          <button class="button is-success" type="submit" form="addUser">Create account</button>
-          <button class="button" @click="resetAdd()">Cancel</button>
-        </footer>
-      </div>
-    </div>
+    <Button type="primary" rounded @click="showUserAdd = true"> Add </Button>
 
-    <div class="table-container">
-      <table class="table is-striped">
-        <thead>
-          <tr>
-            <th>Username</th>
-            <th>Created</th>
-            <th>Modified</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="user in users" :key="user.username">
-            <td>{{ user.username }}</td>
-            <td>{{ new Date(user.created_at).toLocaleString() }}</td>
-            <td>{{ new Date(user.modified_at).toLocaleString() }}</td>
-            <td>
-              <button
-                class="button is-danger icon"
-                @click="deleteUser(user.username)"
-                title="Remove user account"
-                >
-                  <i class="mdi mdi-account-off"></i>
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <Modal
+      title="Create user account"
+      :visible="showUserAdd"
+      @close="resetAdd()"
+    >
+      <template v-slot:default>
+        <form @submit.prevent="addUser()" class="box" id="addUser">
+          <p>Avoid special characters (even spaces) in usernames.</p>
+
+          <Input v-model="addUsername" id="username" label="Username" />
+          <Input
+            v-model="addPassword"
+            type="password"
+            id="password"
+            label="Pass phrase"
+          />
+          <Input
+            v-model="addPasswordConfirmation"
+            type="password"
+            id="password_confirmation"
+            label="Confirm pass phrase"
+            :error="addPasswordsMismatch ? 'Pass phrases don\'t match' : null"
+          />
+        </form>
+      </template>
+      <template v-slot:footer>
+        <Button type="primary" submit form="addUser">Create account</Button>
+        <div class="ml-4">
+          <Button type="secondary" @click="resetAdd()">Cancel</Button>
+        </div>
+      </template>
+    </Modal>
+    <Table
+      :columns="[
+        { key: 'username', label: 'Username' },
+        { key: 'created', label: 'Created' },
+        { key: 'modified', label: 'Modified' },
+        { key: 'actions', label: 'Actions' },
+      ]"
+      :rows="mappedUsers"
+    >
+      <template v-slot:actions="slotProps">
+        <Button type="danger" iconOnly @click="deleteUser(slotProps.username)">
+          <i class="mdi mdi-account-off"></i>
+        </Button>
+      </template>
+    </Table>
   </div>
 </template>
 
 <script>
-import http from '@/http'
-import notifications from '@/notifications'
+import http from "@/http";
+import notifications from "@/notifications";
+import Table from "../components/Table.vue";
+import Button from "../components/Button";
+import Input from "../components/Input.vue";
+import Modal from "../components/Modal.vue";
 
 export default {
-  data () {
+  components: {
+    Button,
+    Input,
+    Modal,
+    Table,
+  },
+  data() {
     return {
-      addUsername: '',
-      addPassword: '',
-      addPasswordConfirmation: '',
+      addUsername: "",
+      addPassword: "",
+      addPasswordConfirmation: "",
       showUserAdd: false,
-      users: []
-    }
+      users: [],
+    };
   },
 
   computed: {
     addPasswordsMismatch() {
       return this.addPassword != this.addPasswordConfirmation;
-    }
+    },
+    mappedUsers() {
+      return this.users.map((u) => ({
+        username: u.username,
+        created: new Date(u.created_at).toLocaleString(),
+        modified: new Date(u.modified_at).toLocaleString(),
+      }));
+    },
   },
 
   methods: {
-    getUsers () {
-      http.get('/users')
+    getUsers() {
+      http
+        .get("/users")
         .then(this.onResults)
         .catch(notifications.error_handler);
     },
-    onResults (response) {
-      this.users = response.data.users
+    onResults(response) {
+      this.users = response.data.users;
     },
-    resetAdd () {
+    resetAdd() {
       this.showUserAdd = false;
-      this.addUsername = '';
-      this.addPassword = '';
-      this.addPasswordConfirmation = '';
+      this.addUsername = "";
+      this.addPassword = "";
+      this.addPasswordConfirmation = "";
     },
-    addUser () {
-      if (! this.addPasswordsMismatch) {
-        http.put('/users', {
-          username: this.addUsername,
-          password: this.addPassword,
-        })
+    addUser() {
+      if (!this.addPasswordsMismatch) {
+        http
+          .put("/users", {
+            username: this.addUsername,
+            password: this.addPassword,
+          })
           .then(this.resetAdd)
           .then(this.getUsers)
           .catch(notifications.error_handler);
       }
     },
     deleteUser(username) {
-      if(confirm(`Really remove ${username}'s account ? All related data will be removed too.`)) {
-        http.delete('/users/'+username)
+      if (
+        confirm(
+          `Really remove ${username}'s account ? All related data will be removed too.`
+        )
+      ) {
+        http
+          .delete("/users/" + username)
           .then(this.getUsers)
           .catch(notifications.error_handler);
       }
-    }
+    },
   },
-  mounted () {
-    this.getUsers()
-  }
-}
+  mounted() {
+    this.getUsers();
+  },
+};
 </script>
 
 <style scoped>
 #showUserAdd {
-    cursor: pointer;
+  cursor: pointer;
 }
 </style>

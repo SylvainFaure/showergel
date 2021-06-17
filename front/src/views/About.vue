@@ -1,9 +1,9 @@
 <template>
-  <div class="content">
-    <h1>This is Showergel</h1>
-    <h2>A companion app for your Liquidsoap radio</h2>
-    <p>Showergel is still in early development.</p>
-    <ul>
+  <div>
+    <h1 class="t-subtitle">This is Showergel</h1>
+    <h2 class="mt-2 t-subtitle">A companion app for your Liquidsoap radio</h2>
+    <p class="mt-6">Showergel is still in early development.</p>
+    <ul class="list-disc list-outside ml-8 mt-4">
       <li>
         <a href="https://showergel.readthedocs.io/en/latest/" target="_blank">
           Documentation

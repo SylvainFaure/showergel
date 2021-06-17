@@ -1,58 +1,49 @@
 <template>
-  <div id="app" class="columns">
+  <div id="app" class="md:flex !font-roboto">
     <Sidebar :title="apptitle"></Sidebar>
-    <div class="column container is-fluid">
+    <div class="p-12 w-100 h-screen">
       <router-view />
     </div>
   </div>
 </template>
 
 <script>
-import http from '@/http'
-import Sidebar from '@/components/Sidebar.vue'
+import http from "@/http";
+import Sidebar from "@/components/Sidebar.vue";
 
 export default {
-  name: 'Showergel',
+  name: "Showergel",
   components: {
-    Sidebar
+    Sidebar,
   },
   data() {
     return {
-      apptitle: "Showergel"
-    }
+      apptitle: "Showergel",
+    };
   },
   methods: {
-    onParamsResponse (response) {
-      this.apptitle = response.data.name
-    }
+    onParamsResponse(response) {
+      this.apptitle = response.data.name;
+    },
   },
-  mounted () {
-    http.get('/params')
+  mounted() {
+    http
+      .get("/params")
       .then(this.onParamsResponse)
-      .catch(error => { console.log(error) })
-  }
-}
+      .catch((error) => {
+        console.log(error);
+      });
+  },
+};
 </script>
 
 <style>
-body {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  color: #2c3e50;
-  background: #f8f8f8;
-}
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap");
 
-#nav {
-  padding: 30px;
+.t-title {
+  @apply pt-4 pb-4 text-5xl leading-10 font-semibold;
 }
-
-#nav a {
-  font-weight: bold;
-  color: #2c3e50;
-}
-
-#nav a.router-link-exact-active {
-  color: #42b983;
+.t-subtitle {
+  @apply pt-4 pb-4 text-4xl leading-10 font-semibold;
 }
 </style>

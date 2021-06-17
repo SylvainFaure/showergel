@@ -1,41 +1,19 @@
 <template>
-  <div id="sidebar" class="column is-narrow">
-    <div class="header">
-      <p class="logo">🧴</p>
-      <h1 class="title">{{ title }}</h1>
+  <div class="bg-white p-2 min-w-max">
+    <div class="text-center p-4">
+      <p class="text-8xl py-4">🧴</p>
+      <h1 class="text-3xl font-bold">{{ title }}</h1>
     </div>
-    <aside class="menu">
-      <ul class="menu-list">
-        <li>
-          <router-link to="/" active-class="is-active">
-              <span class="icon is-medium">
-                <i class="mdi mdi-home"></i>
-              </span>
-              <span>Home</span>
-          </router-link>
-        </li>
-        <li>
-          <router-link to="/users" active-class="is-active">
-              <span class="icon is-medium">
-                <i class="mdi mdi-account-group"></i>
-              </span>
-              <span>Users</span>
-          </router-link>
-        </li>
-        <li>
-          <router-link to="/playout_history" active-class="is-active">
-              <span class="icon is-medium">
-                <i class="mdi mdi-history"></i>
-              </span>
-              <span>Playout History</span>
-          </router-link>
-        </li>
-        <li>
-          <router-link to="/about" active-class="is-active">
-              <span class="icon is-medium">
-                <i class="mdi mdi-information"></i>
-              </span>
-              <span>About</span>
+    <aside>
+      <ul class="leading-5">
+        <li v-for="link in menu" :key="link.key" class="flex">
+          <router-link
+            class="rounded py-2 px-3 w-full"
+            :to="link.url"
+            active-class="bg-blue-500 hover:bg-blue-400 transition duration-300 !text-white"
+          >
+            <Icon :name="link.icon" />
+            <span>{{ link.label }}</span>
           </router-link>
         </li>
       </ul>
@@ -44,36 +22,41 @@
 </template>
 
 <script>
+import Icon from "./Icon";
 export default {
-  props: ['title']
-}
+  components: {
+    Icon,
+  },
+  props: ["title"],
+  data() {
+    return {
+      menu: [
+        {
+          key: "home",
+          url: "/",
+          label: "Home",
+          icon: "home",
+        },
+        {
+          key: "users",
+          url: "/users",
+          label: "Users",
+          icon: "account-group",
+        },
+        {
+          key: "playout_history",
+          url: "/playout_history",
+          label: "Playout history",
+          icon: "history",
+        },
+        {
+          key: "about",
+          url: "/about",
+          label: "About",
+          icon: "information",
+        },
+      ],
+    };
+  },
+};
 </script>
-
-
-<style scoped>
-#sidebar {
-  background: white;
-}
-.header {
-  text-align: center;
-  padding: 1rem;
-}
-.logo {
-  font-size: 8rem;
-}
-.router-link-exact-active > button {
-  background-color: #44b783 !important;
-  color: white !important;
-  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2) !important;
-  margin-bottom: 15px;
-}
-.button {
-  justify-content: left !important;
-}
-.margin-top {
-  margin-top: 2rem;
-}
-.margin-btn {
-  margin-bottom: 10px;
-}
-</style>
